@@ -1,6 +1,9 @@
 #include "FastNoiseLite.h"
 #include <vector>
+#include <iostream>
 #include "raylib/include/raylib.h"
+#include "raylib/include/raymath.h"
+#include "raylib/include/rlgl.h"
 
 //батюшка дипсик спасает, на примере https://github.com/neskech/TerrariaGL
 
@@ -26,7 +29,7 @@ std::vector<int> generateHeightmap(int width, int seed) {
         float noiseValue = noise.GetNoise((float)x, 0.0f);
 
         // Определяем "амплитуду" - насколько сильно холмы будут отклоняться от базового уровня
-        int amplitude = 80; // Максимальное отклонение от baseGroundLevel
+        int amplitude = 40; // Максимальное отклонение от baseGroundLevel
 
         // Вычисляем финальную высоту земли в этом столбце
         // noiseValue от -1 до 1 -> превращаем в отклонение от -amplitude до amplitude
@@ -40,7 +43,7 @@ std::vector<int> generateHeightmap(int width, int seed) {
 
 // Определяем типы блоков
 enum BlockType {
-    AIR = 0,
+    AIR,
     DIRT,
     GRASS,
     STONE
@@ -57,7 +60,7 @@ void generateWorld(std::vector<std::vector<int>>& world, int width, int height, 
     // Шаг 2: Настраиваем 2D шум для пещер
     FastNoiseLite caveNoise;
     caveNoise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
-    caveNoise.SetSeed(seed + 1); // Другой seed, чтобы пещеры не совпадали с горами
+    caveNoise.SetSeed(seed+1); // Другой seed, чтобы пещеры не совпадали с горами
     caveNoise.SetFrequency(0.05f); // Более высокая частота для маленьких пещер
 
     int baseGroundLevel = height / 2;
@@ -68,13 +71,13 @@ void generateWorld(std::vector<std::vector<int>>& world, int width, int height, 
         int groundY = baseGroundLevel + (int)(surfaceValue * 80);
 
         for (int y = 0; y < height; ++y) {
-            if (y > groundY) {
+            if (y > groundY ) {
                 // ----- ПОД ЗЕМЛЕЙ -----
                 // Получаем значение 2D шума для пещер (x, y)
                 float caveValue = caveNoise.GetNoise((float)x, (float)y);
 
                 // Если шум пещер выше порога (например, 0.3), ставим воздух
-                if (caveValue > 0.3f) {
+                if ((caveValue > 0.05f) && (y > groundY + 10)) {
                     world[x][y] = AIR;
                 }
                 // Иначе ставим камень или землю в зависимости от глубины
@@ -103,49 +106,65 @@ int main() {
     const int screenHeight = 600;
     const int worldWidth = 300;
     const int worldHeight = 600;
+    int worldSeed = 123123;
 
-    InitWindow(screenWidth, screenHeight, "ohh is ts fr Terraria?");
+    InitWindow(screenWidth, screenHeight, "ohh is this fr Terraria?");
     SetTargetFPS(60);
-
     // 1. Генерируем мир
     std::vector<std::vector<int>> world(worldWidth, std::vector<int>(worldHeight, AIR));
-    generateWorld(world, worldWidth, worldHeight, 12345);
-
+    generateWorld(world, worldWidth, worldHeight, worldSeed);
     // 2. Загружаем тайлсет (каждый тайл у нас 16x16 пикселей)
     // Представьте, что у вас есть файл tileset.png, где в ряд расположены: трава, земля, камень
-    Texture2D tileset = LoadTexture("images/TileMap_ver1.png"); 
+    Texture2D tileset = LoadTexture("images/TileMap_ver2.png"); 
 
     // Координаты тайлов в текстуре (размер каждого тайла, например 16x16)
-    Rectangle grassRect = { 0, 0, 16, 16 };
-    Rectangle dirtRect = { 16, 0, 16, 16 };
-    Rectangle stoneRect = { 32, 0, 16, 16 };
-
-    // !не работает почему то, может изза размеров файла(15х46)?
+    Rectangle airRect = { 0, 0, 16, 16 };
+    Rectangle grassRect = { 0, 16, 16, 16 };
+    Rectangle dirtRect = { 0, 32, 16, 16 };
+    Rectangle stoneRect = { 0, 48, 16, 16 };
 
     Camera2D camera = { 0 };
-    camera.target = { 0, 0 };
-    camera.offset = { screenWidth / 2.0f, screenHeight / 2.0f };
+    camera.target = { worldWidth * 8.0f, worldHeight * 8.0f };
+    camera.offset = { screenWidth / 2.0f , screenHeight / 2.0f };
     camera.zoom = 1.0f;
 
     // 3. Игровой цикл
     while (!WindowShouldClose()) {
         // --- Управление камерой (чтобы можно было ходить по миру) ---
-        if (IsKeyDown(KEY_RIGHT)) camera.target.x += 5;
-        if (IsKeyDown(KEY_LEFT))  camera.target.x -= 5;
-        if (IsKeyDown(KEY_UP))    camera.target.y -= 5;
-        if (IsKeyDown(KEY_DOWN))  camera.target.y += 5;
+        if (IsKeyDown(KEY_D)) camera.target.x += 25;
+        if (IsKeyDown(KEY_A)) camera.target.x -= 25;
+        if (IsKeyDown(KEY_W)) camera.target.y -= 25;
+        if (IsKeyDown(KEY_S)) camera.target.y += 25;
+        if (IsKeyDown(KEY_ESCAPE)) WindowShouldClose();
+        float wheel = GetMouseWheelMove();
+            // Get the world point that is under the mouse
+            Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+
+            // Set the offset to where the mouse is
+            camera.offset = GetMousePosition();
+
+            // Set the target to match, so that the camera maps the world space point
+            // under the cursor to the screen space point under the cursor at any zoom
+            camera.target = mouseWorldPos;
+
+            // Zoom increment
+            // Uses log scaling to provide consistent zoom speed
+            float scale = 0.2f * wheel;
+            camera.zoom = Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
+
 
         BeginDrawing();
         ClearBackground(BLACK);
+
 
         BeginMode2D(camera);
 
         // --- Рисуем мир, начиная с видимой области ---
         // Определяем, какие блоки видны в камеру (чтобы не рисовать весь огромный мир)
-        int startX = (int)(camera.target.x - screenWidth / 2) / 16 - 2;
-        int endX = (int)(camera.target.x + screenWidth / 2) / 16 + 2;
-        int startY = (int)(camera.target.y - screenHeight / 2) / 16 - 2;
-        int endY = (int)(camera.target.y + screenHeight / 2) / 16 + 2;
+        int startX = (int)(camera.target.x - screenWidth / (2 * camera.zoom ) ) / 16 - 2;
+        int endX = (int)(camera.target.x + screenWidth / (2 * camera.zoom)) / 16 + 2;
+        int startY = (int)(camera.target.y - screenHeight / (2 * camera.zoom)) / 16 - 2;
+        int endY = (int)(camera.target.y + screenHeight / (2 * camera.zoom)) / 16 + 2;
 
         // Ограничиваем границы, чтобы не выйти за пределы массива
         startX = std::max(0, startX);
@@ -161,6 +180,7 @@ int main() {
                 case GRASS: rect = &grassRect; break;
                 case DIRT:  rect = &dirtRect;  break;
                 case STONE: rect = &stoneRect; break;
+                case AIR: rect = &airRect; break;
                 default: continue; // AIR или неизвестный тип - пропускаем
                 }
 
@@ -169,6 +189,7 @@ int main() {
                 DrawTextureRec(tileset, *rect, position, WHITE);
             }
         }
+        DrawCircleV(GetMousePosition(), 4, DARKGRAY);
 
         EndMode2D();
 

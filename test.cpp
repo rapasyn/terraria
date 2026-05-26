@@ -8,6 +8,35 @@
 //батюшка дипсик спасает, на примере https://github.com/neskech/TerrariaGL
 
 // Генерирует карту высот для мира шириной 'width' блоков
+
+// Определяем типы блоков
+
+enum BlockType {
+    AIR,
+    DIRT,
+    SNOW,
+    SNOW_GRASS,
+    ICE,
+    SAND,
+    SAND_STONE,
+    GRASS,
+    STONE
+};
+
+
+
+enum BiomeType {
+    DESERT,
+    GRASSLAND,
+    FOREST,
+    SNOW
+};
+
+struct GenerationParameters {
+    float height;
+    float humidity;
+};
+
 std::vector<int> generateHeightmap(int width, int seed) {
     // 1. Настраиваем генератор шума
     FastNoiseLite noise;
@@ -41,13 +70,36 @@ std::vector<int> generateHeightmap(int width, int seed) {
     return heightmap;
 }
 
-// Определяем типы блоков
-enum BlockType {
-    AIR,
-    DIRT,
-    GRASS,
-    STONE
-};
+GenerationParameters sampleWorldParameters(int x, int y, FastNoiseLite& heightNoise, FastNoiseLite& humidityNoise) {
+    GenerationParameters params;
+    // Генерируем высоту (диапазон 0..1)
+    params.height = (heightNoise.GetNoise((float)x, (float)y) + 1.0f) / 2.0f;
+    // Генерируем влажность (диапазон 0..1)
+    params.humidity = (humidityNoise.GetNoise((float)x + 1000.0f, (float)y + 1000.0f) + 1.0f) / 2.0f;
+    return params;
+}
+
+BiomeType getBiome(GenerationParameters params) {
+    // Сначала правило для воды (низкая высота)
+    if (params.height < 0.3f) {
+        // Можно сделать разные типы воды (холодная/теплая), но для примера просто вода
+        return GRASSLAND;
+    }
+
+    // Правила для суши на основе влажности и высоты
+    if (params.height > 0.8f) {
+        return SNOW; // Высоко и холодно -> снег
+    }
+    else if (params.humidity > 0.7f) {
+        return FOREST; // Влажно -> лес
+    }
+    else if (params.humidity < 0.3f) {
+        return DESERT; // Cухо -> пустыня
+    }
+    else {
+        return GRASSLAND; // Всё остальное -> луга
+    }
+}
 
 // Генерирует весь мир: для каждого блока определяет его тип
 void generateWorld(std::vector<std::vector<int>>& world, int width, int height, int seed) {
@@ -77,11 +129,12 @@ void generateWorld(std::vector<std::vector<int>>& world, int width, int height, 
                 float caveValue = caveNoise.GetNoise((float)x, (float)y);
 
                 // Если шум пещер выше порога (например, 0.3), ставим воздух
-                if ((caveValue > 0.05f) && (y > groundY + 10)) {
+                if ((caveValue > 0.2f) && (y > groundY + 10)) {
                     world[x][y] = AIR;
                 }
                 // Иначе ставим камень или землю в зависимости от глубины
-                else if (y > groundY + 15) {
+                else 
+                 if (y > groundY + 15) {
                     world[x][y] = STONE; // Глубоко под землей - камень
                 }
                 else {
@@ -129,6 +182,9 @@ int main() {
     camera.zoom = 1.0f;
 
     // 3. Игровой цикл
+
+    // ToggleFullscreen();
+
     while (!WindowShouldClose()) {
         // --- Управление камерой (чтобы можно было ходить по миру) ---
         if (IsKeyDown(KEY_D)) camera.target.x += 25;
@@ -139,16 +195,19 @@ int main() {
         float wheel = GetMouseWheelMove();
             // Get the world point that is under the mouse
             Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
-
-            // Set the offset to where the mouse is
-            camera.offset = GetMousePosition();
+            //Vector2 idk;
+            //idk.x = GetScreenWidth() * 8;
+            //idk.y = GetScreenHeight() * 8;
+            //// Set the offset to where the mouse is
+            //camera.offset = GetWindowPosition();
 
             // Set the target to match, so that the camera maps the world space point
             // under the cursor to the screen space point under the cursor at any zoom
-            camera.target = mouseWorldPos;
+            //camera.target = mouseWorldPos;
 
             // Zoom increment
             // Uses log scaling to provide consistent zoom speed
+            SetMousePosition(400*sin(GetTime())+400, 300*sin(GetTime())+300);
             float scale = 0.2f * wheel;
             camera.zoom = Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
 
